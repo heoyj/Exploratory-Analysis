@@ -1,26 +1,26 @@
----
-title: "SI 618 Final Project"
-author : "Youngjin Heo"
-output: 
-  html_document:
-    smart: no
----
 
 ## 1. Motivation:  
 
 The flights are frequently used as transportation system due to the size of land in US. If you ever traveled across the country, then you might concern the flight delay if you have any important meeting, business work, or if you need to catch the next connecting flight, or so. Therefore, investigating the flight's on-time performance by time frame, carriers, or reasons seems to be reasonable in order to resolve several questions. The following exploratory questions are answered throughout this report:
 
 1) What is the top reason for delay in overall across carriers?
+
 2) Which flight carrier has the most frequent delay by year?
+
 3) Is there any same pattern/trend for the flight delay by carrier in each cause?
+
 4) Is the flight delay related to the flight distance?
  
 ## 2. Data Source:  
 
 1) From Bureau of Transportation Statistics website:  <http://www.transtats.bts.gov/DL_SelectFields.asp?Table_ID=236&DB_Short_Name=On-Time>
+
 2) Format: .csv files
+
 3) Size: 3.74 GB (61 files)
+
 4) Dataset periods: 2011. Sep - 2016. Sep
+
 5) Main variables: Year(INT), Quarter(INT), Carrier name(TEXT), Departure delay minutes(INT), Departure delay group(Factor), Distance(INT),  5 causes to delay flights(INT)
 
 
@@ -39,10 +39,9 @@ library(DBI)
 library(RSQLite)
 
 dbdriver = dbDriver("SQLite")
-connect = dbConnect(dbdriver, dbname = "/Users/youngjinheo/Dropbox/2016_fall/SI_618_Exploratory_Analysis/SI618_Final_Project/Data/OnTimePerformance.db")
+connect = dbConnect(dbdriver, dbname = "/Users/directory_path/OnTimePerformance.db")
 
 AllOnTime = dbGetQuery(connect, "SELECT * FROM OnTime")
-# dim(AllOnTime)  # [1] 8814394       9
 head(AllOnTime, n=20L)
 
 AllOnTime$year = factor(AllOnTime$year)
@@ -73,8 +72,6 @@ reason = data.frame(reason)
 
 reason = reason[ order(reason[,1], reason[,2]), ]
 head(reason, n = 10L)
-
-# dim(reason) # [1] 8814394       3
 ```
 
 __3.(b) How did you handle missing, incomplete, or noisy data?__
@@ -182,7 +179,7 @@ del.gp.count <- ddply(del.gp, c('year', 'carrier'), summarise,  delgp6_count = l
 - Since the carrier is coded as abbreviation, I created a carrier table consisting of abbreviation and its corresponding fulll name from look-up table that downloaded from the same web source. In order to remove essential part of the name,  regular expression is used. After filtering and matching, the data looks like the below. 
 
 ```{r echo=FALSE}
-carrier.tbl <- read.table("/Users/youngjinheo/Dropbox/2016_fall/SI_618_Exploratory_Analysis/SI618_Final_Project/Lookup_tables/lookup_table_Carrier.asp", sep = ",", header = TRUE)
+carrier.tbl <- read.table("/Users/directory_path/lookup_table_Carrier.asp", sep = ",", header = TRUE)
 
 # install.packages("stringr")
 library(stringr)
@@ -289,10 +286,6 @@ fig <- dlply(ByCarrier.count, c("FullName"), function(byCarr){
 })
 
 marrangeGrob(fig, ncol=2, nrow=12, top=NULL)
-
-# for (i in 1:(length(fig)/2)){
-#   marrangeGrob(fig[i:(i+1)], ncol=2, nrow=1, top=NULL)
-# }
 ```
 - Reference: 
 
@@ -335,7 +328,6 @@ __3.(a) how did you manipulate the data to prepare it for analysis?__
 Distance.delay = dbGetQuery(connect, "SELECT obs_num, dep_delay, dep_delay_group, distance, distance_group, delay_reason FROM OnTime")
 
 head(Distance.delay, n = 10L)
-# dim(Distance.delay) # [1] 8814394       6
 ```
 __3.(b) How did you handle missing, incomplete, or noisy data?__
 
@@ -363,8 +355,6 @@ fig2 <- dlply(Distance.delay, c("distance_group"), function(Y){
     labs(title = Y$distance_group)
 })
 
-# marrangeGrob(fig2, ncol=2, nrow=7, top=NULL)
-
 marrangeGrob(fig2[1:2], ncol=2, nrow=1, top=NULL)
 marrangeGrob(fig2[3:4], ncol=2, nrow=1, top=NULL)
 marrangeGrob(fig2[10:11], ncol=2, nrow=1, top=NULL)
@@ -390,8 +380,6 @@ delay.gp.mean <- ddply(unique.Dist.delay, c('dep_delay_group', 'distance_group')
 dist.gp.mean <- ddply(unique.Dist.delay, c('dep_delay_group', 'distance_group'), summarise,  dist.mean = mean(distance))
 
 gp.mean.bi <- merge(x = delay.gp.mean, y = dist.gp.mean, by = c('dep_delay_group', 'distance_group') , all = TRUE)
-
-# head(gp.mean.bi, n=20L)
 
 ggplot(gp.mean.bi, aes(x=dist.mean, y=delay.mean)) + 
   geom_point() + 
