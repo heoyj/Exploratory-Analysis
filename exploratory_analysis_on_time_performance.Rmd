@@ -159,7 +159,6 @@ del.gp = dbGetQuery(connect,
 del.gp = data.frame(del.gp)
 
 head(del.gp, n = 10L)
-# dim(del.gp)  # [1] 952980      5
 ```
 
 __3.(b) How did you handle missing, incomplete, or noisy data?__
@@ -185,8 +184,6 @@ carrier.tbl <- read.table("/Users/directory_path/lookup_table_Carrier.asp", sep 
 library(stringr)
 
 carrier.tbl$FullName <- str_match(carrier.tbl$Description, "(.*?) \\([0-9]+.+\\)")[,2]
-
-# head(carrier.tbl, n=20L)
 carrier.tbl <- carrier.tbl[, c('Code', 'FullName')]
 colnames(carrier.tbl) <- c('carrier','FullName')
 
@@ -269,12 +266,6 @@ ByCarrier.count <- merge(x = ByCarrier.count, y = reason.char, by = "delay_reaso
 
 ByCarrier.count <- subset(ByCarrier.count, select = c(Time, count, delay_char, FullName, year, quarter))
 
-# head(ByCarrier.count, n= 10L)
-
-# ggplot(ByCarrier.count, aes(x = Time, y = count, color = delay_char, group = delay_char)) + 
-#   geom_point() + geom_line() + 
-#   facet_grid(FullName ~ .)
-
 fig <- dlply(ByCarrier.count, c("FullName"), function(byCarr){
   g <- ggplot(byCarr, aes(x = reorder(Time, year*10+quarter), y = count, color = delay_char, group = delay_char)) + 
     geom_point() + geom_line() +
@@ -303,8 +294,6 @@ __4.(b) Additional visualization__
 
 ```{r echo=FALSE}
 VA <- ByCarrier.count[which(ByCarrier.count$FullName == 'Virgin America'),]
-# head(VA, n=10L)
-
 VA <- VA[with(VA, order(Time, year, quarter,delay_char)), ]
 VA <- VA[which(VA$year >= 2013 & VA$quarter>=3),]
 
