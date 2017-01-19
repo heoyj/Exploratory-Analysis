@@ -1,0 +1,405 @@
+---
+title: "SI 618 Final Project"
+author : "Youngjin Heo"
+output: 
+  html_document:
+    smart: no
+---
+
+## 1. Motivation:  
+
+The flights are frequently used as transportation system due to the size of land in US. If you ever traveled across the country, then you might concern the flight delay if you have any important meeting, business work, or if you need to catch the next connecting flight, or so. Therefore, investigating the flight's on-time performance by time frame, carriers, or reasons seems to be reasonable in order to resolve several questions. The following exploratory questions are answered throughout this report:
+
+1) What is the top reason for delay in overall across carriers?
+2) Which flight carrier has the most frequent delay by year?
+3) Is there any same pattern/trend for the flight delay by carrier in each cause?
+4) Is the flight delay related to the flight distance?
+ 
+## 2. Data Source:  
+
+1) From Bureau of Transportation Statistics website:  <http://www.transtats.bts.gov/DL_SelectFields.asp?Table_ID=236&DB_Short_Name=On-Time>
+2) Format: .csv files
+3) Size: 3.74 GB (61 files)
+4) Dataset periods: 2011. Sep - 2016. Sep
+5) Main variables: Year(INT), Quarter(INT), Carrier name(TEXT), Departure delay minutes(INT), Departure delay group(Factor), Distance(INT),  5 causes to delay flights(INT)
+
+
+## 3. Methods and Analysis Results
+
+Since the dataset is huge (total 30,302,072 records in the original dataset), I think it's better to import the dataset as DB which was generated and filtered by using Python and extract necessary columns for each questions using SQL. While cleaning the dataset in Python, the records are only considered if there is at least one delay cause and if delay minutes are greater than or equal to zero. This is done for the overall dataset. The cleaned dataset (total 8,814,394 records) and its summary statistics look like the below.
+
+Import data from DB into R. 
+
+- For every 15 minutes in *dep_delay*, the categories in *dep_delay_group* was determined and this column was included in the original dataset. 
+
+- For every 500 miles in *distance*, the categories in *distance_group* was determined and this column was also included in the original dataset. 
+
+```{r echo=FALSE}
+library(DBI) 
+library(RSQLite)
+
+dbdriver = dbDriver("SQLite")
+connect = dbConnect(dbdriver, dbname = "/Users/youngjinheo/Dropbox/2016_fall/SI_618_Exploratory_Analysis/SI618_Final_Project/Data/OnTimePerformance.db")
+
+AllOnTime = dbGetQuery(connect, "SELECT * FROM OnTime")
+# dim(AllOnTime)  # [1] 8814394       9
+head(AllOnTime, n=20L)
+
+AllOnTime$year = factor(AllOnTime$year)
+AllOnTime$quarter = factor(AllOnTime$quarter)
+AllOnTime$carrier = factor(AllOnTime$carrier)
+AllOnTime$dep_delay_group = factor(AllOnTime$dep_delay_group)
+AllOnTime$distance_group = factor(AllOnTime$distance_group)
+AllOnTime$delay_reason = factor(AllOnTime$delay_reason)
+
+summary(AllOnTime[-1])
+```
+
+
+### Q1. What is the top reason for delay in overall across carriers?
+
+__3.(a) how did you manipulate the data to prepare it for analysis?__
+
+- General manipulation is done via python. This data is extracted from DB using SQL. The first 10 records are shown like the below.
+
+- *obs_num* is the unique observation numbers and it is used since some records can have multiple resons for the delay. 
+
+```{r echo=FALSE}
+library(plyr)
+library(ggplot2)
+
+reason = dbGetQuery(connect, "SELECT obs_num, delay_reason, carrier FROM OnTime")
+reason = data.frame(reason)
+
+reason = reason[ order(reason[,1], reason[,2]), ]
+head(reason, n = 10L)
+
+# dim(reason) # [1] 8814394       3
+```
+
+__3.(b) How did you handle missing, incomplete, or noisy data?__
+
+- Missing or incomplete data is removed in python. 
+
+- The record is kept when there is at least one cause of delay and the delay minutes is greater than or equal to zero.
+
+
+__3.(c) How did you perform data analysis in code?__
+
+- In order to count and calculate percentage of each cause of delay, _ddply_ and _ggplot_ is used. The result is shown below. 
+
+__3.(d) What challenges did you encounter and how did you solve them?__
+
+- For Q1, there was no challenge in R. However, I struggled with cleaning the original dataset when DB is created in Python. Especially, it took a bit of time to figure out a fast way to combine and make a new column consiting of delay reasons. Since the delay reasons are splitted into different columns for each, I should make them into a column, while specifying what reason was. This step took the most of time and I finally came up with the solution by googling and referring lecture materials from SI 601 and SI 618. 
+
+```{r echo=FALSE}
+reason.count <- ddply(reason, c('delay_reason'), summarise,  del_count = length(delay_reason))
+ 
+reason.count <- ddply(reason.count, c('del_count', 'delay_reason'), summarise,  pct = del_count*100/sum(reason.count$del_count))
+
+# look-up table for delay reasons
+reason.char <- data.frame(delay_reason=c(1,2,3,4,5),delay_char=c('Carrier', 'Weather', 'National Air System', 'Security', 'Late Aircraft'))
+
+reason.count <- merge(x = reason.count, y = reason.char, by = "delay_reason", all = TRUE)
+
+reason.count <- reason.count[ order(-reason.count[,2]), ]
+
+ggplot(reason.count, aes(x=reorder(delay_char, pct), y=pct)) +
+  labs(title = 'Reasons for Overall Delay of Flights', x='Delay Reason', y='Percent') + 
+  geom_bar(stat = "identity") + 
+  coord_flip() +
+  theme_set(theme_grey(base_size = 18)) + 
+  theme(text = element_text(size=13))
+```
+
+__4.(a) Analysis result__
+
+- During 2011. Sep - 2016. Sep, the top three reasons for the delay were late aircraft, carrier and national air system, taken by 34.3%, 32.9% and 29.2%, respectively. 
+
+__4.(b) Additional visualization__
+
+- I think that the question is simple and this histogram itself shows the insight already. Therefore, just check how this pattern appears in each carrier and displayed only two carriers.  
+
+```{r echo=FALSE}
+reason.count1 <- ddply(reason, c('delay_reason', 'carrier'), summarise,  del_count = length(delay_reason))
+ 
+reason.count2 <- ddply(reason.count1, c('del_count', 'delay_reason', 'carrier'), summarise,  pct = del_count*100/sum(reason.count1$del_count))
+
+reason.count2 <- merge(x = reason.count2, y = reason.char, by = "delay_reason", all = TRUE)
+
+fig <- dlply(reason.count2, c("carrier"), function(Y){
+  g <- ggplot(Y, aes(x=reorder(delay_char, pct), y=pct, colors= delay_char)) +
+    geom_bar(stat = "identity") + 
+    ylab("Percent") +
+    xlab("Delay Reason") +
+    coord_flip() +
+    theme_set(theme_grey(base_size = 18)) + 
+    theme(text = element_text(size=13)) +
+    labs(title = Y$carrier)
+})
+
+library(gridExtra)
+marrangeGrob(fig[3:4], ncol=2, nrow=1, top=NULL)
+
+```
+
+
+### Q2. Compare the count delay minutes is greater than or equal to 90 (mins) by carrier and Year. Which airlines have the most frequent delay that is more than 90 minutes?
+
+__3.(a) how did you manipulate the data to prepare it for analysis?__
+
+- Since DB contains duplicate rows due to multiple reasons of delay for a record, non-duplicate information containing *obs num*, *year*, *quarter*, *carrier*, and *delarture delay group* are extracted using SQL. The data records are 952980 and it is shown the below.
+
+```{r echo=FALSE}
+library(plyr)
+library(ggplot2)
+
+del.gp = dbGetQuery(connect, 
+                    "SELECT obs_num, year, quarter, carrier, dep_delay_group 
+                    FROM 
+                    (SELECT DISTINCT obs_num, year, quarter, carrier, dep_delay, dep_delay_group, distance, distance_group FROM OnTime) 
+                    WHERE dep_delay_group >= 6")
+del.gp = data.frame(del.gp)
+
+head(del.gp, n = 10L)
+# dim(del.gp)  # [1] 952980      5
+```
+
+__3.(b) How did you handle missing, incomplete, or noisy data?__
+
+- Using SQL, the duplicate rows for those five columns are omitted while extracting them from DB adding DISTINCT keyword.
+
+- In order to compare in the same period (1 year), the plot is drawn with only year 2012 - 2016. 
+
+__3.(c) How did you perform data analysis in code?__
+
+- Group by year and carrier, count the frequency for the cases that delayed time is greater than or equal to 90 mintues across 2012-2016, using *ddply*.
+
+```{r echo=FALSE}
+del.gp.count <- ddply(del.gp, c('year', 'carrier'), summarise,  delgp6_count = length(dep_delay_group))
+```
+
+- Since the carrier is coded as abbreviation, I created a carrier table consisting of abbreviation and its corresponding fulll name from look-up table that downloaded from the same web source. In order to remove essential part of the name,  regular expression is used. After filtering and matching, the data looks like the below. 
+
+```{r echo=FALSE}
+carrier.tbl <- read.table("/Users/youngjinheo/Dropbox/2016_fall/SI_618_Exploratory_Analysis/SI618_Final_Project/Lookup_tables/lookup_table_Carrier.asp", sep = ",", header = TRUE)
+
+# install.packages("stringr")
+library(stringr)
+
+carrier.tbl$FullName <- str_match(carrier.tbl$Description, "(.*?) \\([0-9]+.+\\)")[,2]
+
+# head(carrier.tbl, n=20L)
+carrier.tbl <- carrier.tbl[, c('Code', 'FullName')]
+colnames(carrier.tbl) <- c('carrier','FullName')
+
+del.gp.count <- merge(x = del.gp.count, y = carrier.tbl, by = "carrier", all.x = TRUE)
+
+del.gp.count <- del.gp.count[which(del.gp.count$year >= 2012),] 
+
+head(del.gp.count, n=10L)
+```
+
+- Using *ggplot*, bar plots by carrier across the time frame was plotted. 
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+ggplot(del.gp.count,aes(year,delgp6_count,fill=FullName))+
+  geom_bar(stat="identity",position='dodge') +
+  labs(title = 'Frequency of delay minutes \u2265 90 (mins) by Carrier and Year', x='Year', y='Frequency') 
+```
+
+__4.(a) Analysis result__
+
+- It seems to be some distinguish between airlines. Some airlines have high frequency relative to others and the frequency tend to be stable or fluctuated. In order to answer Q2, the additional visualization would be more appropriate. That is, cutting the frequecy and see which airlines have more frequency when delay minutes is greater than or equal to 90 mins.
+
+__4.(b) Additional visualization__
+
+- In order to see which airlines have the top 7 frequency for the flight delay minutes is greater than or equal to 90, draw only for the airlines if their frequency hits 20000 at least once. Since 2012 to 2014, Atlantic Southeast and ExpressJet Airlines have relatively high frequency compared with others, but the trend has decreased after 2015. But, be careful to interpret this result in 2016 since 2016 contains from Jan to Sep.
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+List20000 <- unique(del.gp.count[which(del.gp.count$delgp6_count >= 20000),]$FullName)
+
+del.gp.count.7 <- del.gp.count[del.gp.count$FullName %in% List20000,]
+
+ggplot(del.gp.count.7,aes(year,delgp6_count,fill=FullName))+
+  geom_bar(stat="identity",position='dodge') +
+  labs(title = 'Top 7 Frequency of delay minutes \u2265 90 (mins) by Carrier and Year', x='Year', y='Frequency') 
+```
+Reference : <http://stackoverflow.com/questions/17368223/ggplot2-multi-group-histogram-with-in-group-proportions-rather-than-frequency>
+
+__3.(d) What challenges did you encounter and how did you solve them?__
+
+- I tried to use the way with *qplot* that is used in HW2. However, it took lots of time and the R was frozen while running. I guessed it is because internal processing took more time and consumed more memory than ggplot. Therefore, I explored another method to draw the plot with ggplot. 
+
+
+
+### Q3. For each carrier, how the frequency by delay reason has been changed over time (quarter)?
+
+__3.(a) how did you manipulate the data to prepare it for analysis?__
+
+- Including *delay_reason*, extract *obs_num*, *year*, *quarter* and *carrier* from DB. The data looks like the below.
+
+```{r echo=FALSE}
+ByCarrier = dbGetQuery(connect, "SELECT obs_num, year, quarter, carrier, delay_reason FROM OnTime")
+
+head(ByCarrier, n = 10L)
+```
+
+__3.(b) How did you handle missing, incomplete, or noisy data?__
+
+- In Q3, I didn't need to control missing, incomplete or noisy data, because DB was already cleaned in Python. 
+
+__3.(c) How did you perform data analysis in code?__
+
+- Using *ddply*, calculate the frequency for each carrier by quarter with respect to delay reason. 
+
+__3.(d) What challenges did you encounter and how did you solve them?__
+
+- In general, using *mfrow* allows for the users to plot multiple figures in a page. However, I have never used this kind of setting for ggplot. By googling, I found out how to draw multiple ggplots in a page. But I did not figure out how to use *for* loop to implement *marrangeGrob* function in *gridExtra* package. That's why I increased height and width option in Rmarkdown in order to fit the whole plots in a setting. 
+
+```{r, echo=FALSE, fig.width=20, fig.height=96}
+# make a list of year + quarter text
+ByCarrier$Time <- with(ByCarrier, paste(year, 'Q', quarter, sep = ""))
+
+# calculate the frequency by quarter, carrier and reasons
+ByCarrier.count <- ddply(ByCarrier, c('year', 'quarter', 'carrier', 'delay_reason', 'Time'), summarise,  count = length(delay_reason))
+
+# merge with carrier full name 
+ByCarrier.count <- merge(x = ByCarrier.count, y = carrier.tbl, by = "carrier", all.x = TRUE)
+
+# merge with delay reason in text
+ByCarrier.count <- merge(x = ByCarrier.count, y = reason.char, by = "delay_reason", all.x = TRUE)
+
+ByCarrier.count <- subset(ByCarrier.count, select = c(Time, count, delay_char, FullName, year, quarter))
+
+# head(ByCarrier.count, n= 10L)
+
+# ggplot(ByCarrier.count, aes(x = Time, y = count, color = delay_char, group = delay_char)) + 
+#   geom_point() + geom_line() + 
+#   facet_grid(FullName ~ .)
+
+fig <- dlply(ByCarrier.count, c("FullName"), function(byCarr){
+  g <- ggplot(byCarr, aes(x = reorder(Time, year*10+quarter), y = count, color = delay_char, group = delay_char)) + 
+    geom_point() + geom_line() +
+    ylab("Frequency") +
+    xlab("Time") +
+    theme_set(theme_grey(base_size = 18)) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    labs(title = byCarr$FullName)
+})
+
+marrangeGrob(fig, ncol=2, nrow=12, top=NULL)
+
+# for (i in 1:(length(fig)/2)){
+#   marrangeGrob(fig[i:(i+1)], ncol=2, nrow=1, top=NULL)
+# }
+```
+- Reference: 
+
+- <http://stackoverflow.com/questions/19059826/multiple-graphs-over-multiple-pages-using-ggplot>
+- <http://stackoverflow.com/questions/18887758/remove-page-numbers-from-marrangegrob-or-arrangelist-pdf>
+
+
+__4.(a) Analysis result__
+
+- The plots show quite interesting results. Generally, *Weather* or *Security* are **minor reasons** to cause delay regardless of airelines. The rest of three causes are generally **major cause**: *Carrier*, *Late Aircraft*, *National Air System*. For those major causes, the plots show increasing, stable, or decreasing trends for the number of occurence for flight delays in each reasons. Interestingly, **American Airlines** and **Virgin America** (They are major airlines!) have a steep upward trend relative to others. However, **AirTran Airways Airlines**, **American Eagle Airlines**, **Envoy Air** and **Simmons Airlines** have decreasing trend in terms of frequency. However, I think this trend should be weighted by the total number of flights in each carrier. Otherwise, it is possible to mislead people like the previous interpretation. Becuause, the upward trending may be caused due to the increase the number of flights and therefore, the frequency can be proportional. In order to solve this issue, the original data should include all the records. However, due to the lack of memory in the computer, it seems to be hard to gather all the data even if I use python to generate DB. I think if there is information to calculate the totla number of flights by carreir in each time frame, then it would be helpful to give more reliable plots. 
+
+__4.(b) Additional visualization__
+
+- For Virgin America airlines, plot only after 2013, quarter 3 in order to see whether their it shows upwarding trend in that time frame. As I mentioned in 4.(a), it has a big standard error interval along the line. It supports this trend may be not reliable, since it does not considered the overall number of flights run by Virgin America. 
+
+```{r echo=FALSE}
+VA <- ByCarrier.count[which(ByCarrier.count$FullName == 'Virgin America'),]
+# head(VA, n=10L)
+
+VA <- VA[with(VA, order(Time, year, quarter,delay_char)), ]
+VA <- VA[which(VA$year >= 2013 & VA$quarter>=3),]
+
+ggplot(VA, aes(x=Time, y=count, color = delay_char, group = delay_char)) +
+  geom_point() + 
+  stat_smooth() +
+  ylab("Frequency") +
+  xlab("Time") +
+  theme_set(theme_grey(base_size = 18)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  labs(title = 'Virgin America')
+```
+
+### Q4. Is the flight delay related to the flight distance?
+
+__3.(a) how did you manipulate the data to prepare it for analysis?__
+
+- From DB, extract the following sub-table. As mentioned earlier, *distance_group* (1-11) is determined by the criteria of "every 500 miles" in distance. 
+
+```{r echo=FALSE}
+Distance.delay = dbGetQuery(connect, "SELECT obs_num, dep_delay, dep_delay_group, distance, distance_group, delay_reason FROM OnTime")
+
+head(Distance.delay, n = 10L)
+# dim(Distance.delay) # [1] 8814394       6
+```
+__3.(b) How did you handle missing, incomplete, or noisy data?__
+
+- There was no need to handle these things. 
+
+__3.(c) How did you perform data analysis in code?__
+
+- Using *ggplot*, scatter plots between distance vs. departure delayed minutes by distance_group are plotted using *dlply*. The plots were drawn with *marrangeGrob*.
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+Distance.delay$distance_group = factor(Distance.delay$distance_group)
+Distance.delay$dep_delay_group = factor(Distance.delay$dep_delay_group)
+Distance.delay$delay_reason = factor(Distance.delay$delay_reason)
+
+reason.char <- data.frame(delay_reason=c(1,2,3,4,5),delay_char=c('Carrier', 'Weather', 'National Air System', 'Security', 'Late Aircraft'))
+
+Distance.delay <- merge(x = Distance.delay, y = reason.char, by = 'delay_reason' , all.x = TRUE)
+
+fig2 <- dlply(Distance.delay, c("distance_group"), function(Y){
+  g2 <- ggplot(Y, aes(x=distance, y=dep_delay)) +
+    geom_point(aes(colour=delay_char))+
+    ylab("Departure Delay (min)") +
+    xlab("Distance") +
+    theme_set(theme_grey(base_size = 18)) +
+    labs(title = Y$distance_group)
+})
+
+# marrangeGrob(fig2, ncol=2, nrow=7, top=NULL)
+
+marrangeGrob(fig2[1:2], ncol=2, nrow=1, top=NULL)
+marrangeGrob(fig2[3:4], ncol=2, nrow=1, top=NULL)
+marrangeGrob(fig2[10:11], ncol=2, nrow=1, top=NULL)
+```
+
+__3.(d) What challenges did you encounter and how did you solve them?__
+
+- Since the dataset include many records, the execution time was too long. At first, I would like to draw a scatter plot overall, but it turned out that it did not work well in my laptop. The reason might be similar to the previous issues, memory problem. Therefore, I chose different plots and it worked well even though the time is not short enough. 
+
+__4.(a) Analysis result__
+
+- In the final printed page, only half of plots were displayed, since it took too long time to generate all plots. When I see the plots, it seems to be no relationship between distance vs. departure delayed minutes. All the plots have similar pattern, which is scattered around in the plot. Therefore, it would be hard to say there is a relationship between distance vs. delayed minutes. 
+
+__4.(b) Additional visualization__
+
+- In order to check the relationship between distance and delayed minutes, calcuate mean of each categories and plot them. As shown the below, the smooth line is almost flat. Therefore, I would say there is no relationship between distance and departure delay minutes. 
+
+```{r echo=FALSE}
+unique.Dist.delay <- Distance.delay[!duplicated(Distance.delay$obs_num),]
+
+delay.gp.mean <- ddply(unique.Dist.delay, c('dep_delay_group', 'distance_group'), summarise,  delay.mean = mean(dep_delay))
+
+dist.gp.mean <- ddply(unique.Dist.delay, c('dep_delay_group', 'distance_group'), summarise,  dist.mean = mean(distance))
+
+gp.mean.bi <- merge(x = delay.gp.mean, y = dist.gp.mean, by = c('dep_delay_group', 'distance_group') , all = TRUE)
+
+# head(gp.mean.bi, n=20L)
+
+ggplot(gp.mean.bi, aes(x=dist.mean, y=delay.mean)) + 
+  geom_point() + 
+  stat_smooth() +
+  ylab("Mean Departure Delay (min)") +
+  xlab("Mean Distance") +
+  theme_set(theme_grey(base_size = 18)) +
+  theme(text = element_text(size=15)) +
+  labs(title = "distancve vs. mean departure delay minutes")
+```
+
