@@ -1,4 +1,6 @@
-# On_Time_Performance_Project
+# Exploratory Analysis
+
+## On-time Performance Analysis Project
 
 - Conducted exploratory analysis on on-time performance of flights from 24 airlines in US during the recent 5 years. 
 
